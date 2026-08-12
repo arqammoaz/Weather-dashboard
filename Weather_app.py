@@ -1,68 +1,48 @@
-from flask import Flask, render_template, request, jsonify
 import requests
+from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
+# Make sure your OpenWeather API key is here
 API_KEY = "5950a2aab802bc74cd29ccad1928b139"
-BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
-
-
-def get_weather(city):
-    params = {
-        "q": city,
-        "appid": API_KEY,
-        "units": "metric"
-    }
-
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
-
-    if response.status_code == 200:
-        return {
-            "city": city.title(),
-            "description": data["weather"][0]["description"].title(),
-            "temp": round(data["main"]["temp"]),
-            "feels_like": round(data["main"]["feels_like"]),
-            "humidity": data["main"]["humidity"]
-        }
-    else:
-        return None
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
 @app.route("/api/weather")
-def api_weather():
-    city=request.args.get("city","London")
-    weather_data = get_weather(city)
+def get_weather():
+    city = request.args.get("city")
+    lat = request.args.get("lat")
+    lon = request.args.get("lon")
 
-    if weather_data:
-        return jsonify(weather_data)
-    return jsonify({"error": "City not found"}), 404
+    # 1. Fetch by precise location coordinates if available
+    if lat and lon:
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+    # 2. Otherwise fetch by manual city name
+    elif city:
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
+    else:
+        # Fallback default if nothing is provided
+        url = f"https://api.openweathermap.org/data/2.5/weather?q=London&appid={API_KEY}&units=metric"
 
-from flask import send_from_directory
+    response = requests.get(url)
+    data = response.json()
 
-@app.route("/manifest.json")
-def manifest():
-    return send_from_directory("templates", "manifest.json")
-
-@app.route("/sw.js")
-def service_worker():
-    return send_from_directory(".", "sw.js")
-
-# def main():
-#     print("=== Weather App ===")
-#     print("Type 'exit' to quit\n")
-
-#     while True:
-#         city = input("Enter City name: ").strip()
-
-#         if city.lower() == "exit":
-#             break
-
-    #    get_weather(city)
-
+    if response.status_code == 200:
+        # Extract weather condition icon code (e.g. '10d' for rain, '01d' for clear sky)
+        icon_code = data["weather"][0]["icon"] if "weather" in data else "02d"
+        
+        return jsonify({
+            "city": data["name"],
+            "temp": round(data["main"]["temp"]),
+            "feels_like": round(data["main"]["feels_like"]),
+            "humidity": data["main"]["humidity"],
+            "description": data["weather"][0]["description"].capitalize(),
+            "icon_url": f"https://openweathermap.org/img/wn/{icon_code}@2x.png"
+        })
+    else:
+        return jsonify({"error": "Failed to fetch weather data"}), 400
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True)
